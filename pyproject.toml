@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ascii-paint-to-image"
+version = "0.1.0"
+description = "Terminal ASCII paint to auth2api image generation"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+ascii-paint-to-image = "ascii_paint_to_image.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
