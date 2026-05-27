@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ControlNet Direction Failure Notes</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #202124;
+      background: #f7f7f4;
+      line-height: 1.55;
+    }
+    header {
+      background: #fff;
+      border-bottom: 1px solid #d8d8d0;
+      padding: 28px 34px 20px;
+    }
+    main {
+      max-width: 980px;
+      padding: 26px 34px 42px;
+    }
+    h1 {
+      font-size: 28px;
+      margin: 0 0 10px;
+    }
+    h2 {
+      font-size: 19px;
+      margin: 28px 0 10px;
+    }
+    p, li {
+      font-size: 15px;
+    }
+    code {
+      background: #ecece6;
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+    .summary {
+      max-width: 840px;
+      color: #4c525a;
+    }
+    .callout {
+      background: #fff;
+      border: 1px solid #deded7;
+      border-left: 5px solid #9b2d30;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin: 18px 0;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      background: #fff;
+      border: 1px solid #deded7;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      border-bottom: 1px solid #e5e5df;
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+      font-size: 14px;
+    }
+    th {
+      background: #eeeeea;
+    }
+    tr:last-child td {
+      border-bottom: 0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ControlNet / Diffusion Direction Failure Notes</h1>
+    <p class="summary">本文件記錄為什麼本專案移除本機 SD 1.5 + ControlNet 產圖 prototype。目的不是否定 ControlNet，而是避免未來工程師重複用同一條錯誤方向解同一個需求。</p>
+  </header>
+  <main>
+    <section class="callout">
+      <strong>結論：</strong>
+      這條路無法滿足「ASCII / 灰階輪廓自動理解物件，並精準轉成自然圖片」的核心需求。模型會遵守部分視覺結構，但不會可靠地從輪廓推斷語意；若加上明確 subject prompt，prompt 會主導生成結果。
+    </section>
+
+    <h2>原始目標</h2>
+    <p>使用者在 terminal 裡畫 ASCII / 灰階輪廓後，希望模型根據輪廓本身判斷物件，並生成更清楚、自然的圖片。例如使用者畫蘋果，就生成蘋果；畫車，就生成車。理想流程是：</p>
+    <p><code>ASCII canvas → outline image → model understands the subject → natural image</code></p>
+
+    <h2>測試過的方向</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>方向</th>
+          <th>結果</th>
+          <th>問題</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>SD 1.5 + ControlNet scribble</td>
+          <td>可以生成圖片，但 prompt 主導很強。</td>
+          <td>輪廓只像弱構圖暗示，無法精準保形。</td>
+        </tr>
+        <tr>
+          <td>canny / lineart / softedge 對照</td>
+          <td>lineart 與 softedge 較能保留輪廓。</td>
+          <td>保形時結果變成浮雕、剪影或材質加工，不像自然物件。</td>
+        </tr>
+        <tr>
+          <td>Apple prompt 測試</td>
+          <td>能生成蘋果。</td>
+          <td>即使原輪廓不是蘋果，也會被 prompt 拉成蘋果，證明不是輪廓理解。</td>
+        </tr>
+        <tr>
+          <td>Car prompt 測試</td>
+          <td>部分結果有車語意。</td>
+          <td>常常不遵守原輪廓，或生成角度錯誤。</td>
+        </tr>
+        <tr>
+          <td>中性 prompt 測試</td>
+          <td>模型保留一些形狀。</td>
+          <td>沒有自動理解成蘋果、車等物件，只生成抽象圖案或浮雕。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>關鍵問題</h2>
+    <ul>
+      <li><strong>ControlNet 是結構控制，不是語意辨識。</strong> 它能把輸入圖當作邊緣、線稿、柔邊或塗鴉條件，但不會可靠地回答「這個輪廓是什麼」。</li>
+      <li><strong>Prompt 會主導 subject。</strong> 寫 <code>apple</code> 就會生成蘋果，寫 <code>car</code> 就會生成車。這不是從輪廓推斷，而是文字條件主導。</li>
+      <li><strong>保輪廓與自然成圖衝突。</strong> 提高 control strength 或使用 lineart/softedge 時，結果更貼輪廓，但更像浮雕、貼圖或材質化輪廓，不像自然圖片。</li>
+      <li><strong>ASCII 反推 outline 有資訊損失。</strong> 既有 run 只有 <code>ascii.txt</code>，沒有原始 subpixel 筆跡。從字元密度還原的輪廓很粗、斷裂、階梯化。</li>
+      <li><strong>本機成本偏高。</strong> M3 MacBook Air 16GB 可跑，但首次下載多個 ControlNet 權重需要數 GB；MPS fp16 曾產生 NaN / 全黑圖，改 float32 後速度變慢。</li>
+    </ul>
+
+    <h2>不要重走的路</h2>
+    <ul>
+      <li>不要再把 <code>--controlnet-demo</code> 作為主流程加入專案。</li>
+      <li>不要假設 canny / lineart / softedge 可以自動理解 ASCII 輪廓的 subject。</li>
+      <li>不要用 hardcoded subject prompt 假裝輪廓理解有效。例如用 apple prompt 生成蘋果不能證明模型懂蘋果輪廓。</li>
+      <li>不要把多輪 ControlNet output 再餵回 ControlNet 當作通用理解流程；它只會加強視覺結構或材質化，不會穩定補上語意。</li>
+    </ul>
+
+    <h2>未來可能方向</h2>
+    <ul>
+      <li><strong>使用者明確輸入 subject。</strong> 這是最務實路線：輪廓負責構圖，使用者提供物件語意。</li>
+      <li><strong>加一層 sketch recognition / captioning。</strong> 先讓模型判斷輪廓可能是什麼，再產圖；但這是另一個問題，不是 ControlNet 自己會解。</li>
+      <li><strong>保留 ASCII 互動工具，改進 prompt / analysis flow。</strong> 目前專案原本的純文字分析與 auth2api 路線仍可保留。</li>
+      <li><strong>若要高保形自然成圖，需要專門訓練資料。</strong> 例如自訓 rough ASCII outline → clean line drawing → target image 的模型。</li>
+    </ul>
+
+    <h2>刪除範圍</h2>
+    <p>本次移除 ControlNet prototype 的 CLI、模組、測試、README 說明與 optional dependencies。已生成的 <code>runs/*controlnet*</code> 實驗資料也會從工作目錄移除。Hugging Face 全域 cache 可能被其他專案共用，不在本次自動刪除範圍。</p>
+  </main>
+</body>
+</html>

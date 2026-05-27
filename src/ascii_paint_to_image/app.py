@@ -8,7 +8,7 @@ import time
 import tty
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from ascii_paint_to_image.analysis import (
     analyze_surface,
@@ -16,17 +16,6 @@ from ascii_paint_to_image.analysis import (
     build_prompt,
     build_simple_ascii_prompt,
 )
-from ascii_paint_to_image.controlnet import (
-    DEFAULT_CONTROLNET_BASE_MODEL,
-    DEFAULT_CONTROLNET_MODEL,
-    ControlNetExperiment,
-    ControlNetResult,
-    default_controlnet_experiments,
-    run_controlnet_experiments,
-    select_torch_device,
-)
-from ascii_paint_to_image.outline import save_surface_outline
-from ascii_paint_to_image.report import write_controlnet_report
 from ascii_paint_to_image.runs import (
     Auth2ApiConfig,
     RunBackup,
@@ -56,14 +45,6 @@ class GenerationResult:
     image_path: Optional[Path]
 
 
-@dataclass(frozen=True)
-class ControlNetDemoResult:
-    run: RunBackup
-    outline_path: Path
-    report_path: Path
-    results: List[ControlNetResult]
-
-
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Draw ASCII in the terminal, analyze it as text, and generate an image through auth2api."
@@ -88,34 +69,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default="analysis",
         help="analysis uses derived text metrics; simple sends the raw ASCII sketch with minimal instructions",
     )
-    parser.add_argument("--controlnet-demo", action="store_true", help="run five local ControlNet experiments from a demo outline")
-    parser.add_argument("--controlnet-base-model", default=DEFAULT_CONTROLNET_BASE_MODEL)
-    parser.add_argument("--controlnet-model", default=DEFAULT_CONTROLNET_MODEL)
-    parser.add_argument("--controlnet-device", default="auto", help="auto, mps, cuda, or cpu")
-    parser.add_argument("--controlnet-steps", type=int, default=16)
-    parser.add_argument("--controlnet-size", type=int, default=512)
-    parser.add_argument("--outline-cell-size", type=int, default=16)
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(argv)
-    if args.controlnet_demo:
-        result = run_controlnet_demo(
-            runs_dir=Path(args.runs_dir),
-            base_model=args.controlnet_base_model,
-            controlnet_model=args.controlnet_model,
-            device=args.controlnet_device,
-            controlnet_steps=args.controlnet_steps,
-            image_size=args.controlnet_size,
-            outline_cell_size=args.outline_cell_size,
-        )
-        print(result.run.path)
-        print(result.outline_path)
-        for item in result.results:
-            print(item.image_path)
-        print(result.report_path)
-        return 0
     if args.demo:
         result = run_demo(
             runs_dir=Path(args.runs_dir),
@@ -160,85 +118,6 @@ def run_demo(
         auth2api_config=Auth2ApiConfig(root=auth2api_root, npm_bin=npm_bin),
         now_label=now_label,
         prompt_mode=prompt_mode,
-    )
-
-
-def run_controlnet_demo(
-    runs_dir: Path,
-    now_label: Optional[str] = None,
-    base_model: str = DEFAULT_CONTROLNET_BASE_MODEL,
-    controlnet_model: str = DEFAULT_CONTROLNET_MODEL,
-    device: str = "auto",
-    controlnet_steps: int = 16,
-    image_size: int = 512,
-    outline_cell_size: int = 16,
-    runner: Callable[..., List[ControlNetResult]] = run_controlnet_experiments,
-    experiments: Optional[Iterable[ControlNetExperiment]] = None,
-) -> ControlNetDemoResult:
-    selected_experiments = list(experiments or default_controlnet_experiments())
-    if controlnet_steps <= 0:
-        raise ValueError("controlnet_steps must be positive")
-    if image_size <= 0:
-        raise ValueError("image_size must be positive")
-    selected_experiments = [
-        ControlNetExperiment(
-            name=experiment.name,
-            prompt=experiment.prompt,
-            negative_prompt=experiment.negative_prompt,
-            seed=experiment.seed,
-            steps=controlnet_steps,
-            guidance_scale=experiment.guidance_scale,
-            controlnet_conditioning_scale=experiment.controlnet_conditioning_scale,
-        )
-        for experiment in selected_experiments
-    ]
-    surface = build_demo_surface()
-    ascii_text = ascii_text_from_surface(surface)
-    prompt = "\n\n".join(experiment.prompt for experiment in selected_experiments)
-    analysis = analyze_surface(surface)
-    analysis["mode"] = "controlnet-demo"
-    analysis["base_model"] = base_model
-    analysis["controlnet_model"] = controlnet_model
-    analysis["experiment_count"] = len(selected_experiments)
-    run = create_run_backup(
-        runs_dir=runs_dir,
-        ascii_text=ascii_text,
-        analysis=analysis,
-        prompt=prompt,
-        now_label=now_label,
-    )
-    outline_path = save_surface_outline(
-        surface=surface,
-        path=run.path / "outline.png",
-        cell_size=outline_cell_size,
-        polarity="black-on-white",
-    )
-    output_dir = run.path / "controlnet"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    results = runner(
-        outline_path=outline_path,
-        output_dir=output_dir,
-        experiments=selected_experiments,
-        base_model=base_model,
-        controlnet_model=controlnet_model,
-        device=device,
-        width=image_size,
-        height=image_size,
-    )
-    report_path = write_controlnet_report(
-        run_dir=run.path,
-        title="ControlNet Local Prototype",
-        outline_path=outline_path,
-        results=results,
-        base_model=base_model,
-        controlnet_model=controlnet_model,
-        device=select_torch_device(device),
-    )
-    return ControlNetDemoResult(
-        run=run,
-        outline_path=outline_path,
-        report_path=report_path,
-        results=results,
     )
 
 

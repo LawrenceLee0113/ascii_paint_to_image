@@ -32,6 +32,14 @@ python3 -m pip install -e .
 ascii-paint-to-image
 ```
 
+This also installs a prompt-only host command:
+
+```bash
+ai-image "a luminous terminal-born ink landscape"
+ai-image --prompt-file prompt.txt
+printf "a quiet mountain at sunrise" | ai-image
+```
+
 ## Run
 
 From this folder:
@@ -83,6 +91,13 @@ npm run image -- --out /path/to/run "<generated prompt>"
 
 Change the auth2api location with `--auth2api-root`. If `npm` is not on the normal `PATH`, pass an explicit binary with `--npm-bin`.
 
+For direct prompt-to-image use without the ASCII drawing UI, use `ai-image`. It writes a run backup and then calls the same `auth2api` image script:
+
+```bash
+ai-image --runs-dir runs "a clean product render on white background"
+ai-image --dry-run "test prompt without calling auth2api"
+```
+
 ## Options
 
 Run `--help` to see the current CLI surface:
@@ -106,36 +121,6 @@ Common options:
 - `--sgr-coordinate-mode auto|pixel|cell`: mouse coordinate interpretation. Defaults to `auto`.
 - `--pixel-cell-width` and `--pixel-cell-height`: pixel-to-cell conversion values for terminals reporting pixel mouse coordinates.
 - `--vx-fast-speed` and `--vx-min-ink`: speed-sensitive ink controls. Faster strokes can lay down lighter ink.
-
-## Local ControlNet Prototype
-
-The project can also test a local SD 1.5 + ControlNet pipeline. This path does not call `auth2api`; it exports the ASCII canvas as `outline.png`, uses that outline as the ControlNet condition image, generates five prompt variants, and writes an HTML comparison report.
-
-Install the optional dependencies:
-
-```bash
-python3 -m pip install -e ".[controlnet]"
-```
-
-Run the local prototype:
-
-```bash
-PYTHONPATH=src HF_HUB_DISABLE_XET=1 PYTORCH_ENABLE_MPS_FALLBACK=1 \
-  python3 -m ascii_paint_to_image --controlnet-demo --controlnet-steps 8 --controlnet-size 512
-```
-
-Outputs are written to `runs/<timestamp>/`:
-
-- `outline.png`: grayscale outline converted from the ASCII surface
-- `controlnet/*.png`: generated experiment images
-- `controlnet_report.html`: side-by-side HTML evaluation page
-
-Default models:
-
-- base model: `runwayml/stable-diffusion-v1-5`
-- ControlNet model: `lllyasviel/control_v11p_sd15_scribble`
-
-On Apple Silicon, the code uses MPS when available. The M3 MacBook Air 16GB can run the prototype at 512px, but the first run downloads several GB of model weights and float32 inference is slower than fp16. fp16 on MPS may produce invalid all-black images with this pipeline, so the prototype uses float32 computation on MPS while still loading fp16 weight files.
 
 ## Controls
 

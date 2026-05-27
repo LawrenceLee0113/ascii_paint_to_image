@@ -9,18 +9,9 @@ description = "Terminal ASCII paint to auth2api image generation"
 requires-python = ">=3.9"
 dependencies = []
 
-[project.optional-dependencies]
-controlnet = [
-    "accelerate>=1.13",
-    "diffusers>=0.38",
-    "Pillow>=11",
-    "safetensors>=0.7",
-    "torch>=2.6",
-    "transformers>=5.9",
-]
-
 [project.scripts]
 ascii-paint-to-image = "ascii_paint_to_image.app:main"
+ai-image = "ascii_paint_to_image.prompt_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
