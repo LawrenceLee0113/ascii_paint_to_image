@@ -18,6 +18,11 @@ class AppTest(unittest.TestCase):
         self.assertFalse(args.dry_run)
         self.assertEqual(args.char_ramp, " .',:-=+*oO#8%&@")
 
+    def test_parse_args_accepts_input_image_alias(self) -> None:
+        args = parse_args(["--image", "sketch.png"])
+
+        self.assertEqual(args.input_image, "sketch.png")
+
     def test_run_demo_dry_run_writes_prompt_without_calling_auth2api(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             result = run_demo(

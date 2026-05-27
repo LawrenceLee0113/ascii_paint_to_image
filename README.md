@@ -48,6 +48,12 @@ From this folder:
 PYTHONPATH=src python3 -m ascii_paint_to_image
 ```
 
+To start from an existing image, pass the image path. The app converts it to a grayscale ASCII base layer, fits it into the terminal canvas, then opens the same drawing UI:
+
+```bash
+PYTHONPATH=src python3 -m ascii_paint_to_image --image /path/to/source.png
+```
+
 Draw with the mouse, then generate with either path:
 
 - `g`: analysis prompt path. The app summarizes composition, density, strokes, and colors before image generation.
@@ -118,6 +124,7 @@ Common options:
 - `--char-resolution`: subpixel resolution per terminal cell. Defaults to `9`.
 - `--char-gamma`: density-to-character curve. Defaults to `1.6`.
 - `--char-ramp`: ASCII density ramp from light to dark.
+- `--input-image` / `--image`: load an image as a grayscale ASCII base layer before drawing.
 - `--sgr-coordinate-mode auto|pixel|cell`: mouse coordinate interpretation. Defaults to `auto`.
 - `--pixel-cell-width` and `--pixel-cell-height`: pixel-to-cell conversion values for terminals reporting pixel mouse coordinates.
 - `--vx-fast-speed` and `--vx-min-ink`: speed-sensitive ink controls. Faster strokes can lay down lighter ink.

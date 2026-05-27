@@ -7,7 +7,9 @@ name = "ascii-paint-to-image"
 version = "0.1.0"
 description = "Terminal ASCII paint to auth2api image generation"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+    "Pillow>=11",
+]
 
 [project.scripts]
 ascii-paint-to-image = "ascii_paint_to_image.app:main"

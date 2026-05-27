@@ -17,6 +17,7 @@ from ascii_paint_to_image.analysis import (
     build_simple_ascii_prompt,
 )
 from ascii_paint_to_image.history import SurfaceHistory
+from ascii_paint_to_image.image_input import load_image_to_surface
 from ascii_paint_to_image.runs import (
     Auth2ApiConfig,
     RunBackup,
@@ -56,6 +57,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--char-resolution", type=int, default=9)
     parser.add_argument("--char-gamma", type=float, default=1.6)
     parser.add_argument("--char-ramp", default=DENSITY_RAMP)
+    parser.add_argument(
+        "--input-image",
+        "--image",
+        dest="input_image",
+        help="open an image as a grayscale ASCII base layer before drawing",
+    )
     parser.add_argument("--brush-size", type=int, default=3)
     parser.add_argument("--pixel-cell-width", type=int, default=8)
     parser.add_argument("--pixel-cell-height", type=int, default=16)
@@ -182,13 +189,25 @@ def run_interactive(args: argparse.Namespace) -> int:
     old_settings = termios.tcgetattr(fd)
     terminal_width, terminal_height = terminal_size()
     surface_width, surface_height = drawable_canvas_size(terminal_width, terminal_height)
-    surface = VxAsciiSurface(
-        width=surface_width,
-        height=surface_height,
-        resolution=args.char_resolution,
-        ascii_ramp=args.char_ramp,
-        gamma=args.char_gamma,
-    )
+    if args.input_image:
+        surface = load_image_to_surface(
+            Path(args.input_image),
+            width=surface_width,
+            height=surface_height,
+            resolution=args.char_resolution,
+            ascii_ramp=args.char_ramp,
+            gamma=args.char_gamma,
+        )
+        initial_message = "Loaded " + Path(args.input_image).name + " | z undo | y redo | 0 erase | 1-8 color | g/i gen"
+    else:
+        surface = VxAsciiSurface(
+            width=surface_width,
+            height=surface_height,
+            resolution=args.char_resolution,
+            ascii_ramp=args.char_ramp,
+            gamma=args.char_gamma,
+        )
+        initial_message = "q quit | z undo | y redo | 0 erase | g/i gen | c clear | 1-8 color"
     mouse_is_down = False
     last_point: Optional[Tuple[int, int]] = None
     last_time: Optional[float] = None
@@ -197,7 +216,7 @@ def run_interactive(args: argparse.Namespace) -> int:
     selected_color: Optional[int] = 2
     history = SurfaceHistory()
     resolved_coordinate_mode = args.sgr_coordinate_mode
-    message = "q quit | z undo | y redo | 0 erase | g/i gen | c clear | 1-8 color"
+    message = initial_message
     buffer = ""
 
     try:
