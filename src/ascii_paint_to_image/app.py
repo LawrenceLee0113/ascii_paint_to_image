@@ -16,6 +16,7 @@ from ascii_paint_to_image.analysis import (
     build_prompt,
     build_simple_ascii_prompt,
 )
+from ascii_paint_to_image.history import SurfaceHistory
 from ascii_paint_to_image.runs import (
     Auth2ApiConfig,
     RunBackup,
@@ -191,10 +192,12 @@ def run_interactive(args: argparse.Namespace) -> int:
     mouse_is_down = False
     last_point: Optional[Tuple[int, int]] = None
     last_time: Optional[float] = None
+    stroke_recorded = False
     brush_size = args.brush_size
-    selected_color = 2
+    selected_color: Optional[int] = 2
+    history = SurfaceHistory()
     resolved_coordinate_mode = args.sgr_coordinate_mode
-    message = "q quit | g analysis gen | i simple gen | c clear | 1-8 color"
+    message = "q quit | z undo | y redo | 0 erase | g/i gen | c clear | 1-8 color"
     buffer = ""
 
     try:
@@ -223,10 +226,25 @@ def run_interactive(args: argparse.Namespace) -> int:
                     if key in ("q", "Q"):
                         return 0
                     if key in ("c", "C"):
+                        history.remember(surface)
                         surface.clear()
+                        mouse_is_down = False
                         last_point = None
                         last_time = None
+                        stroke_recorded = False
                         message = "Canvas cleared"
+                    elif key in ("z", "Z"):
+                        mouse_is_down = False
+                        last_point = None
+                        last_time = None
+                        stroke_recorded = False
+                        message = "Undo" if history.undo(surface) else "Nothing to undo"
+                    elif key in ("y", "Y"):
+                        mouse_is_down = False
+                        last_point = None
+                        last_time = None
+                        stroke_recorded = False
+                        message = "Redo" if history.redo(surface) else "Nothing to redo"
                     elif key in ("g", "G"):
                         try:
                             result = generate_from_surface(
@@ -263,12 +281,16 @@ def run_interactive(args: argparse.Namespace) -> int:
                                 message = "Simple generated " + str(result.image_path or result.run.path)
                         except Exception as err:
                             message = "Simple generate failed: " + str(err)
+                    elif key == "0":
+                        selected_color = None
+                        message = "eraser"
                     elif key in "12345678":
-                        selected_color, brush_size = number_key_selection(
+                        selected, brush_size = number_key_selection(
                             int(key),
-                            selected_color,
+                            selected_color or 2,
                             brush_size,
                         )
+                        selected_color = selected
                         message = "color={0}".format(selected_color)
                 elif kind == "mouse":
                     event = parse_sgr_mouse_event(payload)
@@ -276,6 +298,7 @@ def run_interactive(args: argparse.Namespace) -> int:
                         mouse_is_down = False
                         last_point = None
                         last_time = None
+                        stroke_recorded = False
                         continue
                     point, resolved_coordinate_mode = sgr_event_to_subpixel(
                         event=event,
@@ -292,6 +315,9 @@ def run_interactive(args: argparse.Namespace) -> int:
                     now = time.monotonic()
                     should_paint = event.is_left and (not event.is_motion or mouse_is_down)
                     if should_paint:
+                        if not stroke_recorded:
+                            history.remember(surface)
+                            stroke_recorded = True
                         speed = 0.0
                         value = 1.0
                         if last_point is not None and last_time is not None and mouse_is_down:
@@ -302,30 +328,38 @@ def run_interactive(args: argparse.Namespace) -> int:
                             elapsed = max(0.001, now - last_time)
                             speed = distance / max(1, args.char_resolution) / elapsed
                             value = ink_value_for_speed(speed, args.vx_fast_speed, args.vx_min_ink)
-                            surface.paint_line_subpixels(
-                                last_point,
-                                global_point,
-                                brush_size,
-                                color=selected_color,
-                                value=value,
-                            )
+                            if selected_color is None:
+                                surface.erase_line_subpixels(last_point, global_point, brush_size)
+                            else:
+                                surface.paint_line_subpixels(
+                                    last_point,
+                                    global_point,
+                                    brush_size,
+                                    color=selected_color,
+                                    value=value,
+                                )
                         else:
-                            surface.paint_global_subpixel(
-                                global_point[0],
-                                global_point[1],
-                                brush_size,
-                                color=selected_color,
-                                value=value,
-                            )
+                            if selected_color is None:
+                                surface.erase_global_subpixel(global_point[0], global_point[1], brush_size)
+                            else:
+                                surface.paint_global_subpixel(
+                                    global_point[0],
+                                    global_point[1],
+                                    brush_size,
+                                    color=selected_color,
+                                    value=value,
+                                )
                         mouse_is_down = True
                         last_point = global_point
                         last_time = now
-                        message = "coord={0} cell=({1},{2}) speed={3:.1f} ink={4:.2f}".format(
+                        tool = "eraser" if selected_color is None else "color={0}".format(selected_color)
+                        message = "coord={0} cell=({1},{2}) speed={3:.1f} ink={4:.2f} {5}".format(
                             resolved_coordinate_mode,
                             point.cell_x,
                             point.cell_y,
                             speed,
                             value,
+                            tool,
                         )
                 _render(surface, brush_size, selected_color, message, args.sgr_coordinate_mode, resolved_coordinate_mode)
     finally:
@@ -337,7 +371,7 @@ def run_interactive(args: argparse.Namespace) -> int:
 def _render(
     surface: VxAsciiSurface,
     brush_size: int,
-    selected_color: int,
+    selected_color: Optional[int],
     message: str,
     coordinate_mode: str,
     resolved_coordinate_mode: str,
@@ -346,11 +380,11 @@ def _render(
     lines = [_row(surface, y, terminal_width) for y in range(surface.height)]
     status = (
         "ascii-paint-to-image coord={coord}/{resolved} "
-        "color={color} brush={brush} canvas={width}x{height}"
+        "tool={tool} brush={brush} canvas={width}x{height}"
     ).format(
         coord=coordinate_mode,
         resolved=resolved_coordinate_mode,
-        color=selected_color,
+        tool="eraser" if selected_color is None else "color={0}".format(selected_color),
         brush=brush_size,
         width=surface.width,
         height=surface.height,

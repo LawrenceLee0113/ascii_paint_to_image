@@ -1,4 +1,5 @@
 import math
+from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 
@@ -16,6 +17,17 @@ def ink_value_for_speed(speed: float, fast_speed: float, min_value: float) -> fl
         raise ValueError("min_value must be between 0 and 1")
     normalized = min(1.0, max(0.0, speed / fast_speed))
     return round(1.0 - normalized * (1.0 - min_value), 4)
+
+
+@dataclass(frozen=True)
+class SurfaceSnapshot:
+    width: int
+    height: int
+    resolution: int
+    ascii_ramp: str
+    gamma: float
+    ink: List[List[List[List[float]]]]
+    colors: List[List[Optional[int]]]
 
 
 class VxAsciiSurface:
@@ -66,6 +78,38 @@ class VxAsciiSurface:
                 self._colors[y][x] = None
                 self._char_cache[y][x] = " "
                 self._char_dirty[y][x] = False
+
+    def snapshot(self) -> SurfaceSnapshot:
+        return SurfaceSnapshot(
+            width=self.width,
+            height=self.height,
+            resolution=self.resolution,
+            ascii_ramp=self.ascii_ramp,
+            gamma=self.gamma,
+            ink=[
+                [[subrow[:] for subrow in block] for block in row]
+                for row in self._ink
+            ],
+            colors=[row[:] for row in self._colors],
+        )
+
+    def restore(self, snapshot: SurfaceSnapshot) -> None:
+        self.width = snapshot.width
+        self.height = snapshot.height
+        self.resolution = snapshot.resolution
+        self.ascii_ramp = snapshot.ascii_ramp
+        self.gamma = snapshot.gamma
+        self._ink = [
+            [[subrow[:] for subrow in block] for block in row]
+            for row in snapshot.ink
+        ]
+        self._colors = [row[:] for row in snapshot.colors]
+        self._char_cache = [
+            [None for _ in range(self.width)] for _ in range(self.height)
+        ]
+        self._char_dirty = [
+            [True for _ in range(self.width)] for _ in range(self.height)
+        ]
 
     def resize(self, width: int, height: int) -> None:
         if width <= 0 or height <= 0:
@@ -150,6 +194,20 @@ class VxAsciiSurface:
             y = round(start[1] + dy * step / steps)
             self.paint_global_subpixel(x, y, radius, color, value)
 
+    def erase_line_subpixels(
+        self,
+        start: Tuple[int, int],
+        end: Tuple[int, int],
+        radius: int,
+    ) -> None:
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        steps = max(abs(dx), abs(dy), 1)
+        for step in range(steps + 1):
+            x = round(start[0] + dx * step / steps)
+            y = round(start[1] + dy * step / steps)
+            self.erase_global_subpixel(x, y, radius)
+
     def paint_global_subpixel(
         self,
         global_x: int,
@@ -178,6 +236,33 @@ class VxAsciiSurface:
                 if color is not None:
                     self._colors[cell_y][cell_x] = color
                 self._mark_char_dirty(cell_x, cell_y)
+
+    def erase_global_subpixel(
+        self,
+        global_x: int,
+        global_y: int,
+        radius: int,
+    ) -> None:
+        radius = max(0, radius)
+        radius_squared = radius * radius
+        touched_cells = set()
+        for y in range(global_y - radius, global_y + radius + 1):
+            for x in range(global_x - radius, global_x + radius + 1):
+                if radius > 0 and (x - global_x) ** 2 + (y - global_y) ** 2 > radius_squared:
+                    continue
+                cell_x = x // self.resolution
+                cell_y = y // self.resolution
+                if not (0 <= cell_x < self.width and 0 <= cell_y < self.height):
+                    continue
+                local_x = x % self.resolution
+                local_y = y % self.resolution
+                self._ink[cell_y][cell_x][local_y][local_x] = 0.0
+                touched_cells.add((cell_x, cell_y))
+
+        for cell_x, cell_y in touched_cells:
+            if self._cell_is_empty(cell_x, cell_y):
+                self._colors[cell_y][cell_x] = None
+            self._mark_char_dirty(cell_x, cell_y)
 
     def char_at(self, cell_x: int, cell_y: int) -> str:
         self._validate_cell(cell_x, cell_y)
@@ -208,6 +293,13 @@ class VxAsciiSurface:
 
     def _mark_char_dirty(self, cell_x: int, cell_y: int) -> None:
         self._char_dirty[cell_y][cell_x] = True
+
+    def _cell_is_empty(self, cell_x: int, cell_y: int) -> bool:
+        return all(
+            value <= 0.0
+            for row in self._ink[cell_y][cell_x]
+            for value in row
+        )
 
 
 def block_to_ascii_vx(

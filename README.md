@@ -125,7 +125,10 @@ Common options:
 ## Controls
 
 - Mouse click / drag: paint ASCII ink
+- `0`: use the eraser
 - `1`-`8`: choose foreground color
+- `z`: undo the previous stroke or clear action
+- `y`: redo the last undone action
 - `g`: generate with analysis prompt and back up files
 - `i`: generate with simple ASCII prompt and back up files
 - `c`: clear canvas
